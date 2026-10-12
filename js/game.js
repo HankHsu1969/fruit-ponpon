@@ -996,17 +996,18 @@
 
   function drawParticles() {
     for (const p of game.particles) {
-      const t = p.life / p.max, a = 1 - t;
+      if (p.life < 0) continue; // 延遲出現的粒子（life 從負數開始）還沒輪到
+      const t = Math.min(1, p.life / p.max), a = 1 - t;
       ctx.globalAlpha = Math.max(0, a);
       if (p.type === 'juice') {
         ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - t * 0.5), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0, p.size * (1 - t * 0.5)), 0, Math.PI * 2); ctx.fill();
       } else if (p.type === 'star') {
         drawStar(p.x, p.y, p.size * (1 - t * 0.3), p.rot, p.color);
       } else if (p.type === 'ring') {
         ctx.strokeStyle = p.color;
         ctx.lineWidth = 5 * a;
-        ctx.beginPath(); ctx.arc(p.x, p.y, lerp(p.r0, p.r1, easeOutCubic(t)), 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0, lerp(p.r0, p.r1, easeOutCubic(t))), 0, Math.PI * 2); ctx.stroke();
       } else if (p.type === 'confetti') {
         ctx.globalAlpha = Math.min(1, a * 3);
         ctx.save();
@@ -1414,18 +1415,26 @@
 
   // ---------------------------------------------------------------- 主迴圈
   let last = performance.now(), acc = 0;
+  let frameErrors = 0;
   function frame(now) {
+    // 不論這一格發生什麼錯誤，都一定排下一格，遊戲不會整個停住
+    requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (game.state === 'playing' || game.state === 'over') {
-      acc += dt;
-      let n = 0;
-      while (acc >= FIXED_DT && n < 5) { update(FIXED_DT); acc -= FIXED_DT; n++; }
-      if (n === 5) acc = 0;
+    try {
+      if (game.state === 'playing' || game.state === 'over') {
+        acc += dt;
+        let n = 0;
+        while (acc >= FIXED_DT && n < 5) { update(FIXED_DT); acc -= FIXED_DT; n++; }
+        if (n === 5) acc = 0;
+      }
+      if (game.state !== 'paused') updateVisuals(dt);
+      render();
+    } catch (err) {
+      if (frameErrors++ < 5) console.error('[水果碰碰] 畫面更新錯誤：', err);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
     }
-    if (game.state !== 'paused') updateVisuals(dt);
-    render();
-    requestAnimationFrame(frame);
   }
 
   // ---------------------------------------------------------------- 啟動
