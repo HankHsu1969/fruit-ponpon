@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#ffd6e8">
+  <title>水果碰碰</title>
+  <link rel="icon" href="assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Huninn&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=7">
+</head>
+<body class="theme-day">
+  <div id="bg" aria-hidden="true">
+    <div class="bg-layer bg-day"></div>
+    <div class="bg-layer bg-night"></div>
+  </div>
+
+  <div id="app">
+    <aside class="side left">
+      <div class="logo-title small" aria-label="水果碰碰">
+        <span data-t="水">水</span><span data-t="果">果</span><span data-t="碰">碰</span><span data-t="碰">碰</span>
+      </div>
+      <div class="card score-card">
+        <div class="label">分數</div>
+        <div id="score" class="num">0</div>
+      </div>
+      <div class="card best-card">
+        <div class="label">最高分</div>
+        <div id="best" class="num">0</div>
+      </div>
+      <div class="btn-row">
+        <button class="icon-btn c-pink" id="btn-pause" title="暫停 (P)" aria-label="暫停">
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.8"/><rect x="14" y="5" width="4" height="14" rx="1.8"/></svg>
+        </button>
+        <button class="icon-btn c-mint" id="btn-music" title="音樂 (M)" aria-label="音樂開關">
+          <svg viewBox="0 0 24 24" class="on"><path d="M9 17.5a2.5 2.5 0 1 1-2-2.45V5.5l11-2v11a2.5 2.5 0 1 1-2-2.45V7.3L9 8.6z"/></svg>
+          <svg viewBox="0 0 24 24" class="off"><path d="M9 17.5a2.5 2.5 0 1 1-2-2.45V5.5l11-2v11a2.5 2.5 0 1 1-2-2.45V7.3L9 8.6z"/><path d="M3 3l18 18" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>
+        </button>
+        <button class="icon-btn c-lav" id="btn-sfx" title="音效 (N)" aria-label="音效開關">
+          <svg viewBox="0 0 24 24" class="on"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+          <svg viewBox="0 0 24 24" class="off"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l5 6M21 9l-5 6" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+        <button class="icon-btn c-peach" id="btn-theme" title="切換主題 (T)" aria-label="切換白天/夜晚主題">
+          <svg viewBox="0 0 24 24" class="sun"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+          <svg viewBox="0 0 24 24" class="moon"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="stage" id="stage">
+      <canvas id="game" aria-label="遊戲畫面"></canvas>
+    </main>
+
+    <aside class="side right">
+      <div class="card next-card">
+        <div class="label">下一個</div>
+        <div class="next-wrap"><img id="next-img" alt="下一個水果" src="assets/fruits/0.png"></div>
+        <div id="next-name" class="next-name">櫻桃</div>
+      </div>
+      <div class="card ring-card">
+        <div class="label">進化之輪</div>
+        <div id="ring" class="ring"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 封面 -->
+  <div class="cover show" id="ov-start">
+    <div class="cover-bg" aria-hidden="true"></div>
+    <div class="cover-content">
+      <h1 class="logo-title big" aria-label="水果碰碰">
+        <i class="spark s1">✦</i><i class="spark s2">✦</i><i class="spark s3">✦</i>
+        <img class="logo-cherry" src="assets/fruits/0.png" alt="">
+        <span data-t="水">水</span><span data-t="果">果</span><span data-t="碰">碰</span><span data-t="碰">碰</span>
+      </h1>
+      <p class="tagline">碰一碰，合成大西瓜！</p>
+      <button class="big-btn pulse" id="btn-start">開始遊戲</button>
+      <div class="cover-row">
+        <button class="pill-btn" id="btn-howto">怎麼玩？</button>
+        <button class="pill-btn chip" data-theme="day">☀ 白天</button>
+        <button class="pill-btn chip" data-theme="night">☾ 夜晚</button>
+      </div>
+      <p class="cover-best">最高分 <b id="cover-best">0</b></p>
+    </div>
+  </div>
+
+  <!-- 玩法說明 -->
+  <div class="overlay" id="ov-howto">
+    <div class="panel">
+      <img class="panel-bow" src="assets/bow.png" alt="">
+      <h2>怎麼玩</h2>
+      <div class="howto">
+        <p>移動滑鼠或手指選擇位置，<b>點一下</b>放下水果。</p>
+        <p>兩個<b>相同的水果</b>碰在一起，會合成更大的水果！</p>
+        <p>天空會不時下起<b>水果雨</b>，玩越久下得越頻繁，音樂也會越來越快！</p>
+        <p>目標是合成<b>大西瓜</b> 🍉，水果堆超過紅線太久就結束囉。</p>
+      </div>
+      <div class="howto-ring" id="howto-ring"></div>
+      <p class="keys">鍵盤：← → 移動　空白鍵 放下　P 暫停　M 音樂　N 音效</p>
+      <button class="big-btn" id="btn-howto-close">知道了！</button>
+    </div>
+  </div>
+
+  <!-- 暫停 -->
+  <div class="overlay" id="ov-pause">
+    <div class="panel small">
+      <img class="panel-bow" src="assets/bow.png" alt="">
+      <h2>暫停中</h2>
+      <button class="big-btn" id="btn-resume">繼續遊戲</button>
+      <button class="big-btn ghost" id="btn-restart">重新開始</button>
+      <button class="big-btn ghost" id="btn-home">回到封面</button>
+    </div>
+  </div>
+
+  <!-- 遊戲結束 -->
+  <div class="overlay" id="ov-over">
+    <div class="panel">
+      <img class="panel-bow" src="assets/bow.png" alt="">
+      <h2>遊戲結束</h2>
+      <div class="badge" id="new-record">🎉 新紀錄！</div>
+      <div class="final-score"><span class="label">分數</span><span id="final-score" class="num">0</span></div>
+      <div class="final-best">最高分　<span id="final-best">0</span></div>
+      <div class="final-fruit">
+        <img id="final-fruit-img" src="assets/fruits/0.png" alt="">
+        <div>最大的水果<br><b id="final-fruit-name">櫻桃</b></div>
+      </div>
+      <div class="stats" id="final-stats"></div>
+      <button class="big-btn" id="btn-again">再玩一次</button>
+      <button class="big-btn ghost" id="btn-over-home">回到封面</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/assets.js?v=7"></script>
+  <script src="js/physics.js?v=7"></script>
+  <script src="js/audio.js?v=7"></script>
+  <script src="js/game.js?v=7"></script>
+</body>
+</html>

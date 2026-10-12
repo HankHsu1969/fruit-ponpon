@@ -1,0 +1,13 @@
+# 系統 / 編輯器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code 個人設定
+.claude/settings.local.json
