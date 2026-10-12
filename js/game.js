@@ -36,11 +36,12 @@
   };
   const TOOL_IDS = Object.keys(TOOLS);
   const TOOL_WEIGHTS = [0.3, 0.25, 0.25, 0.2];
-  const TOOL_MAX = 3;          // 每種道具最多帶幾個
+  const TOOL_MAX = 2;          // 每種道具最多帶幾個
   const BUBBLE_R = 26;
   const BUBBLE_LIFE = 25;      // 道具泡泡幾秒後消失
-  const BUBBLE_CHANCE = 0.6;   // 每陣水果雨夾帶道具泡泡的機率
-  const REWARD_LEVEL = 6;      // 合成出水蜜桃（含）以上送一個道具
+  const BUBBLE_CHANCE = 0.2;   // 每陣水果雨夾帶道具泡泡的機率
+  const REWARD_LEVEL = 6;      // 合成出水蜜桃（含）以上有機會送一個道具
+  const REWARD_CHANCE = 1 / 3; // 上面那種合成送道具的機率
   const BOMB_RADIUS = 115;
 
   const FRUITS = [
@@ -273,7 +274,7 @@
         for (const bb of world.bodies) {
           if (bb.special === 'bubble' && !bb.removed && Math.hypot(bb.x - x, bb.y - y) < FRUITS[lvl].r + bb.r + 24) popBubble(bb);
         }
-        if (lvl >= REWARD_LEVEL) grantTool(randomTool(), x, y - FRUITS[lvl].r);
+        if (lvl >= REWARD_LEVEL && Math.random() < REWARD_CHANCE) grantTool(randomTool(), x, y - FRUITS[lvl].r);
         if (lvl === MELON) {
           game.stats.melons++;
           showBanner('大西瓜！', '#4cbb5a');
