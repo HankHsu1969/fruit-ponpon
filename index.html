@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Huninn&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body class="theme-day">
   <div id="bg" aria-hidden="true">
@@ -29,6 +29,10 @@
       <div class="card best-card">
         <div class="label">最高分</div>
         <div id="best" class="num">0</div>
+      </div>
+      <div class="card tools-card">
+        <div class="label">道具</div>
+        <div class="tools" id="tools"></div>
       </div>
       <div class="btn-row">
         <button class="icon-btn c-pink" id="btn-pause" title="暫停 (P)" aria-label="暫停">
@@ -98,7 +102,10 @@
         <p>目標是合成<b>大西瓜</b> 🍉，水果堆超過紅線太久就結束囉。</p>
       </div>
       <div class="howto-ring" id="howto-ring"></div>
-      <p class="keys">鍵盤：← → 移動　空白鍵 放下　P 暫停　M 音樂　N 音效</p>
+      <h3 class="howto-sub">特殊道具</h3>
+      <p class="howto-note">水果雨偶爾會帶來<b>道具泡泡</b>，用放下的水果撞破它，或在旁邊合成水果就能收進背包；合成出水蜜桃以上的大水果也會送一個道具。</p>
+      <div class="howto-tools" id="howto-tools"></div>
+      <p class="keys">鍵盤：← → 移動　空白鍵 放下　1～4 道具　P 暫停　M 音樂　N 音效</p>
       <button class="big-btn" id="btn-howto-close">知道了！</button>
     </div>
   </div>
@@ -134,9 +141,9 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="js/assets.js?v=8"></script>
-  <script src="js/physics.js?v=8"></script>
-  <script src="js/audio.js?v=8"></script>
-  <script src="js/game.js?v=8"></script>
+  <script src="js/assets.js?v=10"></script>
+  <script src="js/physics.js?v=10"></script>
+  <script src="js/audio.js?v=10"></script>
+  <script src="js/game.js?v=10"></script>
 </body>
 </html>

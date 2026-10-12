@@ -472,6 +472,79 @@
       this.shaker(t + 0.36, 1.2, this.sfxBus);
     },
 
+    // ------------------------------------------------------------ 道具音效
+    toolArm() { // 拿起放下型道具
+      if (!this._can()) return;
+      const t = this._now();
+      this.marimba(79, t, 0.9, this.sfxBus, 0.4);
+      this.marimba(86, t + 0.07, 0.9, this.sfxBus, 0.5);
+    },
+
+    collect() { // 獲得道具
+      if (!this._can()) return;
+      const t = this._now();
+      [84, 88, 91, 96].forEach((m, i) => this.bell(m, t + i * 0.06, 0.55, this.sfxBus, 0.9));
+    },
+
+    bubblePop() {
+      if (!this._can()) return;
+      const t = this._now(), ctx = this.ctx;
+      const g = ctx.createGain(); g.connect(this.sfxBus);
+      this._env(g, t, 0.3, 0.002, 0.08);
+      const o = this._osc('sine', 500, t, 0.1, g);
+      o.frequency.exponentialRampToValueAtTime(1600, t + 0.06);
+      this._noise(t, 0.05, 0.08, 'highpass', 4000, 0.7, this.sfxBus);
+    },
+
+    boom() { // 炸彈
+      if (!this._can()) return;
+      const t = this._now(), ctx = this.ctx;
+      const n = this._noise(t, 0.9, 0.55, 'lowpass', 1800, 0.8, this.sfxBus);
+      n.filter.frequency.setValueAtTime(1800, t);
+      n.filter.frequency.exponentialRampToValueAtTime(160, t + 0.7);
+      const g = ctx.createGain(); g.connect(this.sfxBus);
+      this._env(g, t, 0.7, 0.003, 0.6);
+      const o = this._osc('sine', 110, t, 0.65, g);
+      o.frequency.exponentialRampToValueAtTime(32, t + 0.5);
+      for (let i = 0; i < 5; i++) this._noise(t + 0.08 + i * 0.07, 0.04, 0.12, 'highpass', 3500, 0.7, this.sfxBus);
+      [72, 79, 84].forEach((m, i) => this.bell(m, t + 0.15 + i * 0.05, 0.35, this.sfxBus, 0.8));
+    },
+
+    rainbow() { // 彩虹星：快速上行滑音
+      if (!this._can()) return;
+      const t = this._now();
+      [72, 74, 76, 79, 81, 84, 86, 88, 91, 93, 96].forEach((m, i) => this.bell(m, t + i * 0.035, 0.45, this.sfxBus, 0.8));
+    },
+
+    zap(i) { // 彩虹星一顆顆消除
+      if (!this._can()) return;
+      const scale = [84, 86, 88, 91, 93, 96, 98, 100, 103, 105];
+      this.bell(scale[i % scale.length], this._now(), 0.5, this.sfxBus, 0.6);
+    },
+
+    sweep() { // 魔法掃把：咻～
+      if (!this._can()) return;
+      const t = this._now();
+      const n = this._noise(t, 0.75, 0.22, 'bandpass', 500, 1.5, this.sfxBus);
+      n.gain.gain.setValueAtTime(0.0001, t);
+      n.gain.gain.linearRampToValueAtTime(0.22, t + 0.25);
+      n.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+      n.filter.frequency.setValueAtTime(400, t);
+      n.filter.frequency.exponentialRampToValueAtTime(5000, t + 0.7);
+      [88, 91, 96, 100].forEach((m, i) => this.bell(m, t + 0.2 + i * 0.1, 0.35, this.sfxBus, 0.8));
+    },
+
+    rattle() { // 搖搖鈴
+      if (!this._can()) return;
+      const t = this._now(), ctx = this.ctx;
+      for (let i = 0; i < 12; i++) this.shaker(t + i * 0.06, 2.2 - i * 0.12, this.sfxBus);
+      const g = ctx.createGain(); g.connect(this.sfxBus);
+      this._env(g, t, 0.35, 0.05, 0.7);
+      const o = this._osc('sine', 55, t, 0.8, g);
+      o.frequency.linearRampToValueAtTime(42, t + 0.7);
+      [79, 76, 79, 84].forEach((m, i) => this.marimba(m, t + i * 0.09, 0.8, this.sfxBus, 0.35));
+    },
+
     // 進入下一階段：快速上行琶音
     levelUp() {
       if (!this._can()) return;

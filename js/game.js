@@ -27,6 +27,22 @@
   const STAGE_SECONDS = 300;  // 每玩 5 分鐘進入下一階段
   const WAVE_LEVELS = [0.55, 0.35, 0.10]; // 水果雨裡各種小水果的機率（櫻桃 / 藍莓 / 葡萄）
 
+  // 特殊道具：drop = 像水果一樣放下；instant = 按下立即生效
+  const TOOLS = {
+    bomb:    { name: '炸彈',     key: '1', mode: 'drop', r: 26, desc: '放下後碰到東西就爆炸，炸掉周圍的水果（哈密瓜和西瓜太大炸不掉）' },
+    rainbow: { name: '彩虹星',   key: '2', mode: 'drop', r: 26, desc: '碰到哪一種水果，場上同種的水果全部消失' },
+    broom:   { name: '魔法掃把', key: '3', mode: 'instant', desc: '立刻掃掉最上層的水果，快滿出來時救命用' },
+    shake:   { name: '搖搖鈴',   key: '4', mode: 'instant', desc: '整箱水果跳起來重新排列，容易觸發連鎖合成' },
+  };
+  const TOOL_IDS = Object.keys(TOOLS);
+  const TOOL_WEIGHTS = [0.3, 0.25, 0.25, 0.2];
+  const TOOL_MAX = 3;          // 每種道具最多帶幾個
+  const BUBBLE_R = 26;
+  const BUBBLE_LIFE = 25;      // 道具泡泡幾秒後消失
+  const BUBBLE_CHANCE = 0.6;   // 每陣水果雨夾帶道具泡泡的機率
+  const REWARD_LEVEL = 6;      // 合成出水蜜桃（含）以上送一個道具
+  const BOMB_RADIUS = 115;
+
   const FRUITS = [
     { name: '櫻桃', r: 24, color: '#ff6b8b' },
     { name: '藍莓', r: 31, color: '#7fa8ff' },
@@ -78,6 +94,8 @@
   const fruitImgs = FRUITS.map((_, i) => loadImg(fruitSrc(i)));
   const mascotImg = loadImg('assets/mascot.png');
   const bowImg = loadImg('assets/bow.png');
+  const toolSrc = id => `assets/tools/${id}.png`;
+  const toolImgs = Object.fromEntries(TOOL_IDS.map(id => [id, loadImg(toolSrc(id))]));
 
   // 圖樣快取（條紋牆、點點底紋），切換主題時重建
   const patterns = {};
@@ -139,23 +157,37 @@
     culprit: null,
     discovered: new Set(),
     maxLevel: 0,
-    stats: { drops: 0, merges: 0, melons: 0, waves: 0 },
+    stats: { drops: 0, merges: 0, melons: 0, waves: 0, collected: 0, used: 0 },
     stage: 0,                  // 難度階段（0 ~ 4）
     waveTimer: WAVE_INTERVALS[0], // 距離下一陣水果雨的秒數
     waveQueue: [],             // 正在依序落下的水果
+    tools: { bomb: 0, rainbow: 0, broom: 0, shake: 0 }, // 道具背包
+    restoreLevel: null,        // 用完放下型道具後，要還給玩家的水果
+    zaps: [],                  // 依序消除的水果（彩虹星、掃把）
+    sweep: null,               // 掃把動畫
+    grace: 0,                  // 道具生效後的保護時間（不判定超線）
   };
 
   // ---------------------------------------------------------------- 物理事件
   world.onPair = (a, b) => {
-    if (game.state !== 'playing' || a.merging || b.merging) return;
+    if (game.state !== 'playing' || a.special || b.special || a.merging || b.merging) return;
     a.merging = b.merging = true;
     world.remove(a); world.remove(b);
     game.merges.push([a, b]);
   };
   world.onImpact = (a, b, speed) => {
     if (game.state !== 'playing' || speed < 160) return;
-    const lvl = b ? Math.max(a.level, b.level) : a.level;
+    const lvl = Math.max(0, b ? Math.max(a.level, b.level) : a.level);
     Sound.hit(lvl / MELON, clamp((speed - 160) / 900, 0.12, 1));
+  };
+  world.onContact = (a, b) => {
+    if (game.state !== 'playing') return;
+    for (const [s, o] of [[a, b], [b, a]]) {
+      if (s.removed || o.removed) continue;
+      if (s.special === 'rainbow') rainbowHit(s, o);
+      // 玩家剛放下的水果撞到道具泡泡 → 泡泡破掉、收進背包
+      else if (s.special === 'bubble' && !o.special && o.droppedAt != null && game.time - o.droppedAt < 3) popBubble(s);
+    }
   };
 
   function makeFruit(x, y, level, fromR) {
@@ -176,6 +208,7 @@
   const randLevel = () => weightedPick(SPAWN_WEIGHTS);
 
   const heldY = lvl => HOLD_TOP + FRUITS[lvl].r;
+  const heldR = h => (h.tool ? TOOLS[h.tool].r : FRUITS[h.level].r);
 
   // ---------------------------------------------------------------- 遊戲流程
   function startGame() {
@@ -184,9 +217,11 @@
       state: 'playing', score: 0, held: { level: 0, t: 0 }, next: randLevel(), cooldown: 0,
       time: 0, merges: [], particles: [], popups: [], banner: null, shake: 0, combo: 0,
       lastMergeAt: -10, danger: 0, warnTimer: 0, culprit: null, discovered: new Set([0]),
-      maxLevel: 0, stats: { drops: 0, merges: 0, melons: 0, waves: 0 },
+      maxLevel: 0, stats: { drops: 0, merges: 0, melons: 0, waves: 0, collected: 0, used: 0 },
       stage: 0, waveTimer: WAVE_INTERVALS[0], waveQueue: [],
+      tools: { bomb: 0, rainbow: 0, broom: 0, shake: 0 }, restoreLevel: null, zaps: [], sweep: null, grace: 0,
     });
+    updateToolsUI();
     Sound.setStage(0);
     updateScoreUI(false);
     setNextUI();
@@ -197,15 +232,23 @@
 
   function drop() {
     if (game.state !== 'playing' || !game.held) return;
-    const lvl = game.held.level, r = FRUITS[lvl].r;
+    const h = game.held, r = heldR(h);
     const x = clamp(game.mascotX, r, BOX_W - r) + rand(-0.3, 0.3);
-    const b = makeFruit(x, heldY(lvl), lvl);
-    b.vy = 60;
-    world.add(b);
+    if (h.tool) {
+      const b = makeSpecial(h.tool, x, HOLD_TOP + r);
+      b.vy = 60;
+      game.restoreLevel = h.saved;   // 道具用完把原本手上的水果還回來
+    } else {
+      const b = makeFruit(x, heldY(h.level), h.level);
+      b.vy = 60;
+      b.droppedAt = game.time;
+      world.add(b);
+      game.stats.drops++;
+      discover(h.level);
+    }
     game.held = null;
     game.cooldown = DROP_COOLDOWN;
-    game.stats.drops++;
-    discover(lvl);
+    updateToolsUI();
     Sound.drop();
   }
 
@@ -226,6 +269,11 @@
         discover(lvl);
         burst(x, y, lvl, FRUITS[a.level].color);
         Sound.merge(lvl, game.combo);
+        // 旁邊的道具泡泡被合成震破
+        for (const bb of world.bodies) {
+          if (bb.special === 'bubble' && !bb.removed && Math.hypot(bb.x - x, bb.y - y) < FRUITS[lvl].r + bb.r + 24) popBubble(bb);
+        }
+        if (lvl >= REWARD_LEVEL) grantTool(randomTool(), x, y - FRUITS[lvl].r);
         if (lvl === MELON) {
           game.stats.melons++;
           showBanner('大西瓜！', '#4cbb5a');
@@ -262,6 +310,292 @@
     }
   }
 
+  // ---------------------------------------------------------------- 特殊道具
+  const randomTool = () => TOOL_IDS[weightedPick(TOOL_WEIGHTS)];
+
+  function makeSpecial(kind, x, y, tool) {
+    const r = kind === 'bubble' ? BUBBLE_R : TOOLS[kind].r;
+    const b = new Body(x, y, r, { level: -1 });
+    b.special = kind;
+    b.tool = tool || kind;
+    b.age = 0;
+    b.pop = 0;
+    b.overT = 0;
+    b.merging = false;
+    if (kind === 'bubble') b.life = BUBBLE_LIFE;
+    world.add(b);
+    return b;
+  }
+
+  function useTool(id) {
+    if (game.state !== 'playing') return;
+    const T = TOOLS[id];
+    // 手上已經拿著同一個道具 → 取消，放回背包
+    if (game.held && game.held.tool === id) {
+      game.tools[id]++;
+      const saved = game.held.saved;
+      game.held = saved != null ? { level: saved, t: 0 } : null;
+      if (!game.held) game.cooldown = 0;
+      updateToolsUI();
+      Sound.click();
+      return;
+    }
+    if (game.tools[id] <= 0) {
+      nudgeTool(id);
+      toast(`還沒有${T.name}：用水果撞破道具泡泡，或合成出水蜜桃以上就能拿到`);
+      return;
+    }
+    if (T.mode === 'drop') {
+      let saved = null;
+      if (game.held) {
+        if (game.held.tool) { game.tools[game.held.tool]++; saved = game.held.saved; }
+        else saved = game.held.level;
+      } else if (game.restoreLevel != null) {
+        saved = game.restoreLevel;
+        game.restoreLevel = null;
+      }
+      game.held = { tool: id, t: 0, saved };
+      game.cooldown = 0;
+      Sound.toolArm();
+    } else if (id === 'broom') {
+      if (!useBroom()) { toast('箱子裡沒有水果可以掃'); return; }
+    } else if (id === 'shake') {
+      useShake();
+    }
+    game.tools[id]--;
+    game.stats.used++;
+    updateToolsUI();
+  }
+
+  function grantTool(id, x, y) {
+    if (game.tools[id] >= TOOL_MAX) {
+      addScore(20, x, y);
+      return;
+    }
+    game.tools[id]++;
+    game.stats.collected++;
+    game.popups.push({ x, y: y - 20, text: `獲得${TOOLS[id].name}！`, life: 0, max: 1.2, size: 20, color: '#ffe066' });
+    flyToSlot(id, x, y);
+    Sound.collect();
+    if (!store.get('melonMerge.toolTip', false)) {
+      store.set('melonMerge.toolTip', true);
+      toast(`獲得${TOOLS[id].name}！點道具按鈕（或按數字鍵 ${TOOLS[id].key}）使用`);
+    }
+  }
+
+  function popBubble(b) {
+    if (b.removed) return;
+    world.remove(b);
+    game.particles.push({ type: 'ring', x: b.x, y: b.y, life: 0, max: 0.35, r0: b.r * 0.6, r1: b.r * 2, color: '#ffffff' });
+    for (let i = 0; i < 10; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(80, 220);
+      game.particles.push({ type: 'star', x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: rand(0.4, 0.7), size: rand(4, 8), color: i % 2 ? '#bfe9ff' : '#ffd1ea', rot: rand(0, 6), spin: rand(-6, 6) });
+    }
+    Sound.bubblePop();
+    grantTool(b.tool, b.x, b.y);
+  }
+
+  function explode(bomb) {
+    world.remove(bomb);
+    const R = BOMB_RADIUS, R2 = R * 2.6;
+    let pts = 0;
+    for (const b of world.bodies) {
+      if (b.removed || b === bomb) continue;
+      const dx = b.x - bomb.x, dy = b.y - bomb.y, d = Math.hypot(dx, dy) || 1;
+      if (b.special === 'bubble') { if (d < R + b.r) popBubble(b); continue; }
+      if (!b.special && b.level < 9 && d < R + b.r * 0.35) {
+        b.merging = true;
+        world.remove(b);
+        burst(b.x, b.y, b.level, FRUITS[b.level].color);
+        pts += b.level + 1;
+      } else if (d < R2) {
+        const f = 1 - d / R2, k = 1100 * f / Math.sqrt(1 + Math.max(0, b.level) * 0.5);
+        b.vx += dx / d * k;
+        b.vy += dy / d * k - 250 * f;
+      }
+    }
+    game.particles.push({ type: 'ring', x: bomb.x, y: bomb.y, life: 0, max: 0.5, r0: 20, r1: R * 1.4, color: '#ffe066' });
+    game.particles.push({ type: 'ring', x: bomb.x, y: bomb.y, life: 0, max: 0.4, r0: 10, r1: R, color: '#ffffff' });
+    for (let i = 0; i < 26; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(200, 520);
+      game.particles.push({ type: 'juice', x: bomb.x, y: bomb.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 0, max: rand(0.4, 0.8), size: rand(4, 9), color: ['#ffd84d', '#ff8fbf', '#b9a2ff', '#ffffff'][i % 4] });
+    }
+    if (pts) addScore(pts, bomb.x, bomb.y - 24);
+    showBanner('轟！', '#ff7aa8');
+    game.shake = 16;
+    game.grace = Math.max(game.grace, 1.5);
+    Sound.boom();
+  }
+
+  function rainbowHit(star, other) {
+    if (star.used || other.removed) return;
+    if (other.special === 'bubble') { popBubble(other); return; }
+    if (other.special) return;
+    star.used = true;
+    world.remove(star);
+    const L = other.level;
+    const targets = world.bodies.filter(b => !b.removed && !b.special && !b.merging && b.level === L);
+    targets.sort((a, b) => Math.hypot(a.x - star.x, a.y - star.y) - Math.hypot(b.x - star.x, b.y - star.y));
+    targets.forEach((b, i) => {
+      b.merging = true; // 排隊消除的水果不能再被合成
+      game.zaps.push({ body: b, at: game.time + 0.1 + i * 0.08, kind: 'rainbow', n: i });
+    });
+    for (let i = 0; i < 6; i++) {
+      game.particles.push({ type: 'ring', x: star.x, y: star.y, life: -i * 0.06, max: 0.5, r0: 10, r1: 90 + i * 20, color: ['#ff8fbf', '#ffb38a', '#ffe066', '#7fdcbc', '#8fc8ff', '#b9a2ff'][i] });
+    }
+    showBanner(`${FRUITS[L].name}全部消失！`, '#b892ff');
+    game.grace = Math.max(game.grace, 1);
+    Sound.rainbow();
+  }
+
+  function useBroom() {
+    const fruits = world.bodies.filter(b => !b.removed && !b.special);
+    if (!fruits.length) return false;
+    const top = Math.min(...fruits.map(b => b.y - b.r));
+    // 只掃最上層：最多 150px，且不超過水果堆高度的 45%
+    const cut = top + Math.min(150, (BOX_H - top) * 0.45);
+    const victims = fruits.filter(b => b.y < cut);
+    if (!victims.length) victims.push(fruits.reduce((m, b) => (b.y - b.r < m.y - m.r ? b : m)));
+    const dur = 0.7;
+    game.sweep = { t: 0, dur, top: Math.max(top, -40), cut };
+    victims.forEach(b => {
+      b.merging = true;
+      game.zaps.push({ body: b, at: game.time + 0.05 + ((b.x + 30) / (BOX_W + 60)) * dur, kind: 'sweep', n: 0 });
+    });
+    game.zaps.sort((a, b) => a.at - b.at);
+    game.grace = Math.max(game.grace, 2);
+    showBanner('掃乾淨！', '#5cc4a0');
+    Sound.sweep();
+    return true;
+  }
+
+  function useShake() {
+    for (const b of world.bodies) {
+      if (b.removed) continue;
+      const k = 1 - Math.max(0, b.level) * 0.045;
+      b.vy -= rand(650, 950) * k;
+      b.vx += rand(-220, 220);
+      b.w += rand(-6, 6);
+    }
+    game.shake = 14;
+    game.grace = Math.max(game.grace, 2.8);
+    showBanner('搖一搖！', '#ff9fc8');
+    Sound.rattle();
+  }
+
+  function updateTools(dt) {
+    for (const b of world.bodies) {
+      if (b.removed || !b.special) continue;
+      if (b.pop < 1) b.pop = Math.min(1, b.pop + dt / 0.3);
+      if (b.special === 'bomb') {
+        if (b.fuse == null && b.touched) b.fuse = 0.15;
+        if (b.fuse != null && (b.fuse -= dt) <= 0) explode(b);
+      } else if (b.special === 'bubble') {
+        b.life -= dt;
+        if (b.life <= 0) {
+          world.remove(b);
+          game.particles.push({ type: 'ring', x: b.x, y: b.y, life: 0, max: 0.3, r0: b.r * 0.5, r1: b.r * 1.5, color: '#ffffff' });
+          Sound.plink(0);
+        }
+      }
+    }
+    // 依序消除（彩虹星、掃把）
+    while (game.zaps.length && game.time >= game.zaps[0].at) {
+      const z = game.zaps.shift();
+      const b = z.body;
+      if (b.removed) continue;
+      world.remove(b);
+      if (z.kind === 'rainbow') {
+        burst(b.x, b.y, b.level, ['#ff8fbf', '#ffb38a', '#ffe066', '#7fdcbc', '#8fc8ff', '#b9a2ff'][z.n % 6]);
+        addScore((b.level + 1) * 2, b.x, b.y - 10);
+        Sound.zap(z.n);
+      } else {
+        burst(b.x, b.y, b.level, FRUITS[b.level].color);
+        Sound.plink(Math.floor(b.x / 80));
+      }
+    }
+  }
+
+  function drawTool(id, x, y, r, angle, s) {
+    const im = toolImgs[id];
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle || 0);
+    if (isReady(im)) {
+      const box = r * (id === 'bomb' ? 2.75 : 2.35) * s;
+      const k = box / Math.max(im.naturalWidth, im.naturalHeight);
+      const w = im.naturalWidth * k, h = im.naturalHeight * k;
+      const oy = id === 'bomb' ? -h * 0.14 : 0; // 炸彈的引信在上面，讓圓形本體對齊碰撞圓
+      ctx.drawImage(im, -w / 2, -h / 2 + oy, w, h);
+    } else {
+      ctx.fillStyle = '#b9a2ff';
+      ctx.beginPath(); ctx.arc(0, 0, r * s, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawGlow(x, y, r, rgb) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${rgb},0.45)`);
+    g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawSpecial(b) {
+    const s = b.pop < 1 ? 0.6 + 0.4 * easeOutBack(b.pop) : 1;
+    if (b.special === 'bubble') {
+      const blink = b.life < 5 && Math.sin(game.clock * 14) < 0 ? 0.4 : 1;
+      const wob = 1 + Math.sin(game.clock * 4 + b.id) * 0.05;
+      ctx.save();
+      ctx.globalAlpha = blink;
+      ctx.translate(b.x, b.y);
+      ctx.scale(wob * s, (2 - wob) * s);
+      const g = ctx.createRadialGradient(-b.r * 0.3, -b.r * 0.35, b.r * 0.1, 0, 0, b.r);
+      g.addColorStop(0, 'rgba(255,255,255,0.9)');
+      g.addColorStop(0.55, 'rgba(225,240,255,0.35)');
+      g.addColorStop(0.85, 'rgba(255,200,235,0.5)');
+      g.addColorStop(1, 'rgba(185,160,255,0.85)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = blink;
+      drawTool(b.tool, b.x, b.y, b.r * 0.62, Math.sin(game.clock * 2 + b.id) * 0.25, s);
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * s, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.72 * s, -2.6, -1.9); ctx.stroke();
+      ctx.restore();
+    } else if (b.special === 'bomb') {
+      const flash = b.fuse != null ? 1 + 0.25 * Math.abs(Math.sin(game.clock * 40)) : 1;
+      if (b.fuse != null) drawGlow(b.x, b.y, b.r * 2.4, '255,90,120');
+      drawTool('bomb', b.x, b.y, b.r, b.angle, s * flash);
+    } else if (b.special === 'rainbow') {
+      const hue = (game.clock * 120) % 360;
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2);
+      g.addColorStop(0, `hsla(${hue},100%,80%,0.55)`);
+      g.addColorStop(1, `hsla(${hue},100%,80%,0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2, 0, Math.PI * 2); ctx.fill();
+      drawTool('rainbow', b.x, b.y, b.r, b.angle, s);
+    }
+  }
+
+  function drawSweep() {
+    const sw = game.sweep;
+    if (!sw) return;
+    const t = sw.t / sw.dur;
+    const x = lerp(-30, BOX_W + 30, t);
+    const y = (sw.top + sw.cut) / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.35 * (1 - t);
+    ctx.fillStyle = '#fff6fb';
+    ctx.fillRect(0, sw.top, x, sw.cut - sw.top);
+    ctx.restore();
+    drawTool('broom', x, y, 46, -0.6 + Math.sin(game.clock * 18) * 0.25, 1);
+  }
+
   // ---------------------------------------------------------------- 水果雨
   // 時間到就直接從箱口灑下一小批小水果。每玩 STAGE_SECONDS 秒進入下一階段：
   // 間隔縮短 5 秒（30 → 10 秒為止），背景音樂也跟著加快、升調。
@@ -294,13 +628,23 @@
     }
     game.waveTimer -= dt;
     if (game.waveTimer <= 0) {
-      planWave().forEach((it, i) => game.waveQueue.push({ x: it.x, level: it.level, at: game.time + i * 0.12, i }));
+      const items = planWave();
+      items.forEach((it, i) => game.waveQueue.push({ x: it.x, level: it.level, at: game.time + i * 0.12, i }));
+      if (Math.random() < BUBBLE_CHANCE) {
+        game.waveQueue.push({ bubble: true, x: rand(BUBBLE_R, BOX_W - BUBBLE_R), at: game.time + items.length * 0.12 + 0.1, i: items.length });
+      }
       game.waveTimer += WAVE_INTERVALS[game.stage];
       game.stats.waves++;
       Sound.rain();
     }
     while (game.waveQueue.length && game.time >= game.waveQueue[0].at) {
       const it = game.waveQueue.shift();
+      if (it.bubble) {
+        const bb = makeSpecial('bubble', it.x, -BUBBLE_R - 8, randomTool());
+        bb.vy = 120;
+        Sound.plink(it.i);
+        continue;
+      }
       const b = makeFruit(it.x, waveY(it.level), it.level);
       b.vy = 120;
       b.pop = 0;
@@ -313,8 +657,13 @@
 
   function checkDanger(dt) {
     let near = false, maxOver = 0, worst = null;
+    if (game.grace > 0) {
+      game.grace -= dt;
+      for (const b of world.bodies) b.overT = 0;
+    }
     for (const b of world.bodies) {
-      if (b.removed) continue;
+      if (b.removed || b.special) continue;
+      if (game.grace > 0) continue;
       const top = b.y - b.r;
       if (b.age > 0.8 && top < LINE_Y + 45) near = true;
       if (b.age > 1.0 && top < LINE_Y) {
@@ -394,9 +743,14 @@
     if (game.state === 'playing' && !game.held) {
       game.cooldown -= dt;
       if (game.cooldown <= 0) {
-        game.held = { level: game.next, t: 0 };
-        game.next = randLevel();
-        setNextUI();
+        if (game.restoreLevel != null) {
+          game.held = { level: game.restoreLevel, t: 0 };
+          game.restoreLevel = null;
+        } else {
+          game.held = { level: game.next, t: 0 };
+          game.next = randLevel();
+          setNextUI();
+        }
       }
     }
     if (game.held) game.held.t += dt;
@@ -409,6 +763,7 @@
 
     world.step(dt);
     processMerges();
+    if (game.state === 'playing') updateTools(dt);
     if (game.state === 'playing') checkDanger(dt);
   }
 
@@ -417,7 +772,7 @@
     if (game.keyDir && (game.state === 'playing' || game.state === 'title')) {
       game.aimX = clamp(game.aimX + game.keyDir * 430 * dt, 0, BOX_W);
     }
-    const r = game.held ? FRUITS[game.held.level].r : 18;
+    const r = game.held ? heldR(game.held) : 18;
     const target = clamp(game.aimX, r, BOX_W - r);
     const prev = game.mascotX;
     game.mascotX += (target - game.mascotX) * Math.min(1, dt * 20);
@@ -441,7 +796,16 @@
       if (p.life >= p.max) game.popups.splice(i, 1);
     }
     if (game.banner) { game.banner.t += dt; if (game.banner.t > game.banner.max) game.banner = null; }
+    if (game.sweep) {
+      game.sweep.t += dt;
+      if (game.sweep.t > game.sweep.dur) game.sweep = null;
+      else if (Math.random() < 0.7) {
+        const sx = lerp(-30, BOX_W + 30, game.sweep.t / game.sweep.dur);
+        game.particles.push({ type: 'star', x: sx + rand(-20, 20), y: rand(game.sweep.top, game.sweep.cut), vx: rand(-40, 40), vy: rand(-80, 20), life: 0, max: 0.6, size: rand(5, 9), color: Math.random() < 0.5 ? '#fff6a8' : '#ffc4e1', rot: rand(0, 6), spin: rand(-6, 6) });
+      }
+    }
     game.shake = Math.max(0, game.shake - dt * 22);
+    updateToolHint();
     if (game.state !== 'playing') game.danger = Math.max(0, game.danger - dt);
   }
 
@@ -460,6 +824,7 @@
     drawGuide(T);
     for (const b of world.bodies) {
       if (b.removed) continue;
+      if (b.special) { drawSpecial(b); continue; }
       const s = b.pop < 1 ? 1 + 0.16 * Math.sin(b.pop * Math.PI) : 1;
       drawFruit(b.level, b.x, b.y, b.r, b.angle, s);
       if (b === game.culprit && game.state === 'over' && Math.sin(game.clock * 14) > 0) {
@@ -469,6 +834,7 @@
       }
     }
     drawWalls(T);
+    drawSweep();
     drawParticles();
     drawHolder();
     drawPopups(T);
@@ -564,10 +930,10 @@
 
   function drawGuide(T) {
     if (game.state !== 'playing' || !game.held) return;
-    const lvl = game.held.level, r = FRUITS[lvl].r;
+    const r = heldR(game.held);
     const x = clamp(game.mascotX, r, BOX_W - r);
     const yEnd = landingY(x);
-    const y0 = heldY(lvl) + r;
+    const y0 = HOLD_TOP + 2 * r;
     if (yEnd <= y0) return;
     ctx.save();
     ctx.strokeStyle = T.guide;
@@ -607,9 +973,14 @@
     const bob = Math.sin(game.clock * 3.2) * 3;
     const x = game.mascotX;
     if (game.held && game.state === 'playing') {
-      const lvl = game.held.level;
-      const appear = game.held.t < 0.28 ? easeOutBack(game.held.t / 0.28) : 1;
-      drawFruit(lvl, x, heldY(lvl) + bob, FRUITS[lvl].r, 0, Math.max(0.01, appear));
+      const h = game.held, r = heldR(h);
+      const appear = Math.max(0.01, h.t < 0.28 ? easeOutBack(h.t / 0.28) : 1);
+      if (h.tool) {
+        drawGlow(x, HOLD_TOP + r + bob, r * 1.7, h.tool === 'bomb' ? '255,120,160' : '200,170,255');
+        drawTool(h.tool, x, HOLD_TOP + r + bob, r, Math.sin(game.clock * 5) * 0.15, appear);
+      } else {
+        drawFruit(h.level, x, heldY(h.level) + bob, r, 0, appear);
+      }
     }
     if (!isReady(mascotImg)) return;
     const m = META.mascot, s = MASCOT_SCALE;
@@ -769,6 +1140,72 @@
     toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 1400);
   }
 
+  const toolBtns = {};
+  function buildToolsUI() {
+    const box = $('tools');
+    TOOL_IDS.forEach(id => {
+      const T = TOOLS[id];
+      const btn = document.createElement('button');
+      btn.className = 'tool-btn empty';
+      btn.title = `${T.name}（${T.key}）：${T.desc}`;
+      btn.setAttribute('aria-label', T.name);
+      btn.innerHTML = `<img src="${toolSrc(id)}" alt=""><b class="cnt">0</b><span class="tkey">${T.key}</span>`;
+      btn.addEventListener('click', e => { e.currentTarget.blur(); useTool(id); });
+      box.appendChild(btn);
+      toolBtns[id] = btn;
+    });
+    const help = $('howto-tools');
+    TOOL_IDS.forEach(id => {
+      const row = document.createElement('div');
+      row.className = 'howto-tool';
+      row.innerHTML = `<img src="${toolSrc(id)}" alt=""><div><b>${TOOLS[id].name}</b>　${TOOLS[id].desc}</div>`;
+      help.appendChild(row);
+    });
+  }
+
+  function updateToolsUI(flashId) {
+    TOOL_IDS.forEach(id => {
+      const btn = toolBtns[id];
+      if (!btn) return;
+      const n = game.tools[id];
+      btn.querySelector('.cnt').textContent = n;
+      btn.classList.toggle('empty', n <= 0 && !(game.held && game.held.tool === id));
+      btn.classList.toggle('armed', !!(game.held && game.held.tool === id));
+      if (id === flashId) { btn.classList.remove('got'); void btn.offsetWidth; btn.classList.add('got'); }
+    });
+  }
+
+  function nudgeTool(id) {
+    const btn = toolBtns[id];
+    btn.classList.remove('nope'); void btn.offsetWidth; btn.classList.add('nope');
+  }
+
+  // 道具從遊戲畫面飛進背包按鈕
+  function flyToSlot(id, wx, wy) {
+    const btn = toolBtns[id];
+    const cr = canvas.getBoundingClientRect(), br = btn.getBoundingClientRect();
+    const sx = cr.left + (wx + SIDE) * scale, sy = cr.top + (wy + TOP) * scale;
+    const img = document.createElement('img');
+    img.src = toolSrc(id);
+    img.className = 'fly-tool';
+    img.style.left = sx + 'px';
+    img.style.top = sy + 'px';
+    document.body.appendChild(img);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.style.transform = `translate(${br.left + br.width / 2 - sx}px, ${br.top + br.height / 2 - sy}px) scale(0.55)`;
+    }));
+    setTimeout(() => { img.remove(); updateToolsUI(id); }, 700);
+  }
+
+  // 危險時提示可以用的救命道具
+  let hintOn = false;
+  function updateToolHint() {
+    const on = game.state === 'playing' && game.danger > 0.5;
+    if (on === hintOn) return;
+    hintOn = on;
+    ['broom', 'bomb', 'shake'].forEach(id => toolBtns[id] && toolBtns[id].classList.toggle('hint', on));
+  }
+
   function hideOverlays() {
     [ui.ovStart, ui.ovPause, ui.ovOver, ui.ovHowto].forEach(o => o.classList.remove('show'));
   }
@@ -792,6 +1229,8 @@
     game.particles.length = 0;
     game.popups.length = 0;
     game.banner = null;
+    game.zaps.length = 0;
+    game.sweep = null;
     hideOverlays();
     $('cover-best').textContent = game.best;
     ui.ovStart.classList.add('show');
@@ -805,7 +1244,8 @@
     $('final-fruit-img').src = fruitSrc(game.maxLevel);
     $('final-fruit-name').textContent = FRUITS[game.maxLevel].name;
     $('final-stats').textContent =
-      `放下 ${game.stats.drops} 顆・合成 ${game.stats.merges} 次・撐過 ${game.stats.waves} 陣水果雨・大西瓜 ${game.stats.melons} 顆`;
+      `放下 ${game.stats.drops} 顆・合成 ${game.stats.merges} 次・撐過 ${game.stats.waves} 陣水果雨・` +
+      `收集道具 ${game.stats.collected} 個・使用 ${game.stats.used} 次・大西瓜 ${game.stats.melons} 顆`;
     ui.ovOver.classList.add('show');
     updateScoreUI(false);
     // 分數跳動
@@ -934,6 +1374,9 @@
       toggleSfx();
     } else if (k === 't' || k === 'T') {
       setTheme(settings.theme === 'day' ? 'night' : 'day');
+    } else {
+      const id = TOOL_IDS.find(t => TOOLS[t].key === k);
+      if (id) useTool(id);
     }
   });
   window.addEventListener('keyup', e => {
@@ -988,6 +1431,7 @@
   // ---------------------------------------------------------------- 啟動
   buildRing();
   buildHowtoRing();
+  buildToolsUI();
   refreshRing();
   $('cover-best').textContent = game.best;
   setTheme(settings.theme);
@@ -999,7 +1443,7 @@
 
   // 方便除錯 / 測試
   window.__game = {
-    game, world, FRUITS, makeFruit, startGame, drop, BOX_W, BOX_H,
+    game, world, FRUITS, makeFruit, startGame, drop, BOX_W, BOX_H, grantTool, useTool, makeSpecial,
     // 快轉 sec 秒（分頁在背景時 requestAnimationFrame 不會跑，測試用）
     advance(sec) {
       const n = Math.round(sec / FIXED_DT);

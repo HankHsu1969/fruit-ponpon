@@ -62,6 +62,7 @@
       this._contacts = [];
       this._pool = [];
       this.onPair = null;    // (a, b) 兩顆水果接觸時呼叫（用於合成）
+      this.onContact = null; // (a, b) 任一方是特殊物件（body.special）時，接觸就呼叫（道具用）
       this.onImpact = null;  // (a, b|null, speed) 有明顯撞擊時呼叫（用於音效）
     }
 
@@ -126,6 +127,11 @@
           let d = Math.sqrt(d2), nx, ny;
           if (d < 1e-6) { nx = 0; ny = 1; d = 0; } else { nx = dx / d; ny = dy / d; }
           this._solvePosition(a, b, nx, ny, rs - d);
+          if (this.onContact && (a.special || b.special)) {
+            this.onContact(a, b);
+            if (a.removed) break;
+            if (b.removed) continue;
+          }
           if (this.onPair && a.level === b.level) {
             this.onPair(a, b);
             if (a.removed) break;
