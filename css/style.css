@@ -122,15 +122,16 @@ body.theme-night #game { filter: drop-shadow(0 16px 26px rgba(30, 10, 80, 0.4));
   font-size: 15px;
   letter-spacing: 2px;
   color: #fff;
-  background: linear-gradient(#ffa9cc, var(--pink));
+  --lt: #ffa9cc; --lc: var(--pink); --ld: var(--pink-d);   /* 標籤的亮色 / 主色 / 陰影色 */
+  background: linear-gradient(var(--lt), var(--lc));
   border: 3px solid #fff;
   border-radius: 999px;
   padding: 2px 16px 1px;
-  box-shadow: 0 0 0 2px var(--pink-d), 0 3px 0 2px var(--pink-d);
+  box-shadow: 0 0 0 2px var(--ld), 0 3px 0 2px var(--ld);
 }
-.best-card .label { background: linear-gradient(#cdbcff, var(--lav)); box-shadow: 0 0 0 2px var(--lav-d), 0 3px 0 2px var(--lav-d); }
-.next-card .label { background: linear-gradient(#a6ecd4, var(--mint)); box-shadow: 0 0 0 2px var(--mint-d), 0 3px 0 2px var(--mint-d); }
-.ring-card .label { background: linear-gradient(#ffcfb3, var(--peach)); box-shadow: 0 0 0 2px var(--peach-d), 0 3px 0 2px var(--peach-d); }
+.best-card .label { --lt: #cdbcff; --lc: var(--lav); --ld: var(--lav-d); }
+.next-card .label { --lt: #a6ecd4; --lc: var(--mint); --ld: var(--mint-d); }
+.ring-card .label { --lt: #ffcfb3; --lc: var(--peach); --ld: var(--peach-d); }
 
 .num {
   font-family: var(--num);
@@ -494,7 +495,12 @@ body.theme-night .overlay { background: rgba(40, 25, 100, 0.45); }
   .logo-title.small, .ring-card { display: none; }
   .card { padding: 4px 10px 5px; border-radius: 18px; border-width: 3px; box-shadow: 0 0 0 2px var(--line), 0 4px 0 2px var(--line-deep); }
   .card::before { inset: 3px; border-radius: 14px; border-width: 1.5px; }
-  .label { position: static; transform: none; display: inline-block; font-size: 11px; letter-spacing: 1px; padding: 0 8px; border-width: 2px; box-shadow: none; }
+  .label {
+    position: static; transform: none; display: inline-block;
+    font-size: 11px; letter-spacing: 1px; padding: 0 8px;
+    border-width: 1.5px; box-shadow: 0 0 0 1.5px var(--ld);
+    margin: 2px 0 3px;
+  }
   .num { font-size: 24px; }
   .best-card .num { font-size: 19px; }
   .score-card { min-width: 80px; }
